@@ -4,6 +4,10 @@ import com.hawen.thrift.pojo.RolePojo;
 import com.hawen.thrift.pojo.UserPojo;
 import com.hawen.thrift.service.RoleService;
 import com.hawen.thrift.service.UserService;
+import com.hawen.thrift.utils.R4jUtils;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.vavr.CheckedFunction0;
+import io.vavr.control.Try;
 import org.apache.thrift.TConfiguration;
 import org.apache.thrift.TException;
 import org.apache.thrift.TMultiplexedProcessor;
@@ -61,8 +65,42 @@ public class ThriftClient {
 
     }
 
+    public static void testClient2() {
+        TTransport transport = null;
+        try {
+            TConfiguration configuration = new TConfiguration();
+            //传输层
+            transport = new TSocket(configuration, SERVER_IP, SERVER_PORT, TIMEOUT);
+            //数据协议层
+            TBinaryProtocol protocol = new TBinaryProtocol(transport);
+            //从处理器层获取业务接口
+            TMultiplexedProtocol userServiceMp = new TMultiplexedProtocol(protocol, "userService");
+            UserService.Client userClient = new UserService.Client(userServiceMp);
+            //打开连接
+            transport.open();
+            //获取断路器
+            CircuitBreaker circuitBreaker = R4jUtils.circuitBreakerRegistry().circuitBreaker("thrift");
+            //捆绑事件和断路器
+            CheckedFunction0<UserPojo> decorateCheckedSupplier =
+                    CircuitBreaker.decorateCheckedSupplier(circuitBreaker,
+                            () -> userClient.getUser(1L));
+            //发送事件
+            Try<UserPojo> result = Try.of(decorateCheckedSupplier)
+                    .recover(ex -> null);
+            System.out.println(result.get().getUsername());
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            if (transport != null) {
+                transport.close();//关闭连接
+            }
+        }
+    }
+
+
     public static void main(String[] args) {
-        testClient();
+//        testClient();
+        testClient2();
     }
 
 
